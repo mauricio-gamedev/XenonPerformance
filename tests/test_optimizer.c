@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include "../src/xp_optimizer.h"
 
@@ -17,6 +18,14 @@ static XpTelemetry base_game(void)
     t.frame_time_p95_ms = 17.5f;
     t.frame_time_jitter_ms = 1.0f;
     return t;
+}
+
+static void assert_safe_without_actions(XpTelemetry t)
+{
+    const XpOptimizationPlan p = xp_optimizer_plan(&t);
+    assert(p.profile == XP_PROFILE_SAFE);
+    assert(p.proposed_actions == XP_ACTION_NONE);
+    assert(p.hardware_writes_enabled == false);
 }
 
 int main(void)
@@ -47,15 +56,46 @@ int main(void)
     assert(p.hardware_writes_enabled == false);
 
     t = base_game();
+    t.total_physical_bytes = 0;
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.free_physical_bytes = t.total_physical_bytes + 1u;
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.cpu_temp_c = NAN;
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.board_temp_c = 0.0f; /* common missing-sensor sentinel */
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.frame_time_p95_ms = NAN;
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.frame_time_avg_ms = 0.0f; /* not a valid sample for an active game */
+    assert_safe_without_actions(t);
+
+    t = base_game();
+    t.title_id = 0;
+    assert_safe_without_actions(t);
+
+    t = base_game();
     t.is_game = false;
+    t.total_physical_bytes = 0; /* no game telemetry needed for IDLE */
     p = xp_optimizer_plan(&t);
     assert(p.profile == XP_PROFILE_IDLE);
     assert(p.proposed_actions == XP_ACTION_NONE);
+    assert(p.hardware_writes_enabled == false);
 
     p = xp_optimizer_plan(NULL);
     assert(p.profile == XP_PROFILE_SAFE);
+    assert(p.proposed_actions == XP_ACTION_NONE);
     assert(p.hardware_writes_enabled == false);
 
-    puts("XPOPT1 PASS: optimizer policy gates validated; hardware writes remain disabled");
+    puts("XPOPT2 PASS: planner thresholds, invalid telemetry fail-closed, and write gate validated");
     return 0;
 }

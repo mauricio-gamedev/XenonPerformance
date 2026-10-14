@@ -2,6 +2,13 @@ name: Xenon Performance v1.9.0 optimizer core
 
 on:
   push:
+    branches: [main, xenon-performance-stage-b-auto-mode, recovery/stage-b1-failure-rollback]
+    paths:
+      - 'src/xp_optimizer.c'
+      - 'src/xp_optimizer.h'
+      - 'tests/test_optimizer.c'
+      - '.github/workflows/optimizer-core-v190.yml'
+  pull_request:
     branches: [main]
     paths:
       - 'src/xp_optimizer.c'
@@ -37,8 +44,8 @@ jobs:
       - name: Run optimizer policy tests
         run: |
           set -euo pipefail
-          ./build/xp_optimizer_tests | tee build/XPOPT1.txt
-          grep -F 'XPOPT1 PASS' build/XPOPT1.txt
+          ./build/xp_optimizer_tests | tee build/XPOPT2.txt
+          grep -F 'XPOPT2 PASS' build/XPOPT2.txt
 
       - name: Prove write gate remains closed
         run: |
@@ -52,4 +59,4 @@ jobs:
         with:
           name: XenonPerformance-v1.9.0-Optimizer-Core-Validation
           retention-days: 14
-          path: build/XPOPT1.txt
+          path: build/XPOPT2.txt

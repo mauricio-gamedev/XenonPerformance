@@ -21,6 +21,11 @@ enum XpActionFlags {
     XP_ACTION_THERMAL_GUARD     = 1u << 4
 };
 
+/*
+ * Game profiles are only planned when all memory, temperature, and frame-time
+ * measurements are populated with valid values. Zero/NaN/malformed telemetry
+ * causes XP_PROFILE_SAFE with no proposed actions.
+ */
 typedef struct XpTelemetry {
     uint32_t title_id;
     bool is_game;
@@ -45,7 +50,7 @@ typedef struct XpOptimizationPlan {
     uint8_t memory_used_percent;
     float hottest_temp_c;
 
-    /* v1.9.0 is diagnostic/planning only. Hardware writes remain blocked. */
+    /* Advisory output only. Hardware/game-memory writes remain blocked. */
     bool hardware_writes_enabled;
 } XpOptimizationPlan;
 
