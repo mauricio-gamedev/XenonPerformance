@@ -112,7 +112,7 @@ jobs:
           exec > >(tee -a "$LOG") 2>&1
 
           echo 'XPAUTOB2 stage=source-gates begin'
-          grep -Fq 'ORD_XAM_GET_CURRENT_TITLE_ID' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_NT_CREATE_FILE' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_EX_CREATE_THREAD' src/xp_auto_mode_stage_b.s
           grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000' src/xp_auto_mode_stage_b.s
           grep -Fq 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
@@ -127,14 +127,18 @@ jobs:
           grep -Fq 'ORD_KE_DELAY_EXECUTION_THREAD' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_MM_IS_ADDRESS_VALID' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_RTL_IMAGE_XEX_HEADER_FIELD' src/xp_auto_mode_stage_b.s
-          grep -Fq 'ORD_XAM_CREATE_FILE_A' src/xp_auto_mode_stage_b.s
-          grep -Fq 'ORD_XAM_WRITE_FILE' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_RTL_INIT_ANSI_STRING' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_NT_WRITE_FILE' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_NT_CLOSE' src/xp_auto_mode_stage_b.s
+          ! grep -Eq 'ORD_XAM_|XamGetCurrentTitleId|XamCreateFileA|XamWriteFile|xam_module_name' src/xp_auto_mode_stage_b.s
           grep -Fq 'identity_path_usb0' src/xp_auto_mode_stage_b.s
           grep -Fq 'XP_STABLE_SAMPLES' src/xp_auto_mode_stage_b.s
           grep -Fq 'srwi    r12, r15, 24' src/xp_auto_mode_stage_b.s
           grep -Fq 'XEX_HEADER_EXECUTION_INFO' src/xp_auto_mode_stage_b.s
+          grep -Fq 'XEX_EXECUTION_INFO_TITLE_ID_OFFSET' src/xp_auto_mode_stage_b.s
+          grep -Fq 'read_module_title_id:' src/xp_auto_mode_stage_b.s
           grep -A1 '^profile_registry_count:' src/xp_auto_mode_stage_b.s | grep -Eq '\.long[[:space:]]+0'
-          ! grep -Eq '\.loaded|NtCreateFile|NtWriteFile|XNotifyQueueUI|MmSetAddressProtect|MmDoubleMapMemory|HalSendSMCMessage|HalWriteArgonEeprom' \
+          ! grep -Eq '\.loaded|XNotifyQueueUI|MmSetAddressProtect|MmDoubleMapMemory|HalSendSMCMessage|HalWriteArgonEeprom' \
             src/xp_auto_mode_stage_b.s
           echo 'XPAUTOB2 stage=source-gates pass runtime_enabled=0 deployment_blocked=1 profile_count=0 game_writes=0 collector_attempts=0'
 
@@ -273,18 +277,19 @@ jobs:
 
           This is a diagnostic/preflight artifact only. The runtime gate is
           explicitly disabled (XP_STAGE_B1_RUNTIME_ENABLED=0) because the
-          freestanding worker's XapiThreadStartup entry is not yet resolved
-          through a verified target-compatible import path. The worker calls
-          XAM APIs, so a successful assembly/XEX build is not proof that it is
-          safe to execute on a physical console.
+          worker has been refactored to use kernel-native XEX metadata and file
+          APIs instead of XAM exports. However, ExCreateThread still receives
+          apiThreadStartup=NULL, and native USB path semantics plus the target
+          kernel's export map have not been verified on hardware. A successful
+          assembly/XEX build is not proof that it is safe to execute.
 
           This artifact performs no runtime collection, creates no thread, and
           writes no identity report. The compile-time profile registry is empty,
           game-memory writes are disabled, and no FPS gain is claimed.
 
-          Next gate: resolve the correct XapiThreadStartup linkage from a trusted
-          SDK/import source, or redesign the collector around verified APIs;
-          then add startup-context tests and validate on the intended console.
+          Next gate: validate null apiThreadStartup, native NtCreateFile stack
+          argument handling, kernel exports, and USB object-manager paths on the
+          intended console. Keep runtime disabled until that validation passes.
           TXT
 
           cp "$REL/XenonPerformancePlugin-Stage-B1.xex" \
