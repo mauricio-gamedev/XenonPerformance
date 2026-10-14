@@ -118,6 +118,8 @@ jobs:
           grep -Fq 'xp_kernel_thread_startup:' src/xp_auto_mode_stage_b.s
           grep -Fq 'lis     r6, xp_kernel_thread_startup@ha' src/xp_auto_mode_stage_b.s
           grep -Fq 'li      r3, ORD_EX_TERMINATE_THREAD' src/xp_auto_mode_stage_b.s
+          grep -Fq 'mr      r8, r30' src/xp_auto_mode_stage_b.s
+          grep -Fq 'mr      r12, r15' src/xp_auto_mode_stage_b.s
           ! grep -Fq 'apiThreadStartup=NULL' src/xp_auto_mode_stage_b.s
           grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000' src/xp_auto_mode_stage_b.s
           grep -Fq 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
@@ -290,7 +292,7 @@ jobs:
           explicitly disabled (XP_STAGE_B1_RUNTIME_ENABLED=0) because the
           worker now uses a local kernel-only startup shim instead of linking
           XapiThreadStartup. The shim dispatches the worker and uses
-          ExTerminateThread if it returns. This callback ABI, native USB path
+          the pre-resolved ExTerminateThread pointer if it returns. This callback ABI,
           semantics, and target kernel export map have not been verified on
           hardware. A successful assembly/XEX build is not proof that it is safe.
 
@@ -298,7 +300,7 @@ jobs:
           writes no identity report. The compile-time profile registry is empty,
           game-memory writes are disabled, and no FPS gain is claimed.
 
-          Next gate: validate the local startup shim, ExTerminateThread handoff,
+          Next gate: validate the local startup shim, pre-resolved termination handoff,
           NtCreateFile stack argument, kernel exports, and USB object-manager
           paths on the intended console. Keep runtime disabled until then.
           TXT

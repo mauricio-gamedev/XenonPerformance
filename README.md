@@ -9,11 +9,10 @@ research.
 DashLaunch `launch.ini`.** The worker reads TitleId from the active XEX
 ExecutionInfo and uses kernel-native file APIs instead of XAM exports.
 ExCreateThread now receives the local assembly callback
-`xp_kernel_thread_startup`, which invokes the worker and calls
-`ExTerminateThread` if it returns. That callback/termination contract, target
-kernel export map, ninth NtCreateFile stack argument, and USB object-manager
-paths have not been validated on hardware. A successful build does not
-establish runtime safety.
+`xp_kernel_thread_startup`, which invokes the worker and calls the pre-resolved `ExTerminateThread` pointer
+if it returns. That callback ABI, target kernel export map, ninth NtCreateFile
+stack argument, and USB object-manager paths have not been validated on
+hardware. A successful build does not establish runtime safety.
 
 The current build sets `XP_STAGE_B1_RUNTIME_ENABLED=0`. On DLL attach it
 returns successfully without creating a worker, polling a title, or writing an

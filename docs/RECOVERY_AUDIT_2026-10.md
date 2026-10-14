@@ -141,10 +141,11 @@ dashboard has the same export layout.
 
 The branch now passes `xp_kernel_thread_startup` as the `apiThreadStartup`
 callback to `ExCreateThread`. This assembly shim receives the start routine,
-context, and exit code, invokes the worker with its context, then resolves and
-calls Xbox 360 kernel ordinal 25 (`ExTerminateThread`) if the worker returns.
-It does not call XAPI or the C runtime. CI gates pin the ordinal and verify that
-the local shim is wired into the creation call.
+context, and exit code, invokes the worker with its context, then calls the pre-resolved Xbox 360 kernel ordinal 25 (`ExTerminateThread`)
+if the worker returns. The entry resolves this export before thread creation
+and passes the pointer as callback context; if the export lookup fails, it skips
+creating the worker. The worker ignores that context argument. The shim does
+not call XAPI or the C runtime. CI gates pin the ordinal and verify the handoff.
 
 This replaces the previous `apiThreadStartup=NULL` candidate, but it does not
 prove that the kernel invokes this callback with precisely the expected

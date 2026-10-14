@@ -152,8 +152,10 @@ The current entry passes `xp_kernel_thread_startup` as the
 `ExCreateThread` `apiThreadStartup` callback, rather than passing NULL or
 linking the freestanding image against `xapilib.lib`. Its contract mirrors
 the public callback signature: receive the start routine, context and exit
-code; call the worker with its context; if the worker returns, resolve and call
-`ExTerminateThread` with the exit code. This shim uses only assembly and
-the Xbox kernel export resolver, so it avoids direct XAPI/CRT dependencies.
+code; call the worker with its context; if the worker returns, invoke the pre-resolved `ExTerminateThread` pointer
+with the exit code. The entry resolves that export before thread creation,
+passes its pointer as callback context, and skips creating the worker if the
+export cannot be found. The worker ignores that context argument. The shim uses
+only assembly, avoiding direct XAPI/CRT dependencies.
 The callback and exit handoff are still unverified on a physical target.
 `XP_STAGE_B1_RUNTIME_ENABLED` remains zero; do not install the XEX.

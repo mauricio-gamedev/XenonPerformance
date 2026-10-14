@@ -74,6 +74,13 @@ _start:
     beq     loader_success
     mr      r31, r3
 
+    # Resolve termination before creating the worker; fail closed if absent.
+    li      r3, ORD_EX_TERMINATE_THREAD
+    bl      get_kernel_export
+    cmpwi   r3, 0
+    beq     loader_success
+    mr      r30, r3
+
     li      r3, 0
     stw     r3, 0x40(r1)       # thread handle
     stw     r3, 0x44(r1)       # thread id
@@ -85,7 +92,7 @@ _start:
     addi    r6, r6, xp_kernel_thread_startup@l
     lis     r7, auto_mode_thread@ha
     addi    r7, r7, auto_mode_thread@l
-    li      r8, 0
+    mr      r8, r30            # StartContext = validated ExTerminateThread pointer
     lis     r9, 0x1000         # EX_CREATE_FLAG_CORE4 = 0x10000000
     ori     r9, r9, EX_CREATE_FLAG_SYSTEM # system thread, not suspended
     mtctr   r31
@@ -115,8 +122,8 @@ loader_success:
     blr
 
 # Kernel-only ExCreateThread adapter:
-# IN r3 = StartRoutine, r4 = StartContext, r5 = ExitCode.
-# Calls StartRoutine(StartContext), then terminates this thread with ExitCode.
+# IN r3 = StartRoutine, r4 = validated ExTerminateThread pointer, r5 = ExitCode.
+# The worker ignores its context; this adapter uses it for thread termination.
 # This callback intentionally uses no XAPI or C runtime helper.
 xp_kernel_thread_startup:
     mflr    r0
@@ -127,18 +134,14 @@ xp_kernel_thread_startup:
     stw     r16, 0x14(r1)
 
     mr      r14, r3             # StartRoutine
-    mr      r15, r4             # StartContext
+    mr      r15, r4             # Pre-resolved ExTerminateThread pointer
     mr      r16, r5             # ExitCode
 
-    mr      r3, r15
+    mr      r3, r15             # Worker currently ignores its context argument
     mtctr   r14
     bctrl
 
-    li      r3, ORD_EX_TERMINATE_THREAD
-    bl      get_kernel_export
-    cmpwi   r3, 0
-    beq     xp_kernel_thread_halt
-    mr      r12, r3
+    mr      r12, r15
     mr      r3, r16
     mtctr   r12
     bctrl
