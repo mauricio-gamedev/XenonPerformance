@@ -144,6 +144,26 @@ jobs:
           grep -Fq 'subf    r11, r9, r28' src/xp_auto_mode_stage_b.s
           grep -Fq 'cmplw   r11, r10' src/xp_auto_mode_stage_b.s
           ! grep -Eq 'ORD_XAM_|XamGetCurrentTitleId|XamCreateFileA|XamWriteFile|xam_module_name' src/xp_auto_mode_stage_b.s
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("src/xp_auto_mode_stage_b.s").read_text()
+          start = source.index("_start:")
+          loader_end = source.index("loader_success:", start)
+          entry = source[start:loader_end]
+          create = entry.index("li      r3, ORD_EX_CREATE_THREAD")
+          terminate = entry.index("li      r3, ORD_EX_TERMINATE_THREAD")
+          create_call = entry.index("mtctr   r31\n    bctrl", create)
+          assert create < terminate < create_call, "termination export must resolve before ExCreateThread"
+          assert "mr      r30, r3" in entry[terminate:create_call], "termination pointer not saved"
+          assert "mr      r8, r30" in entry[create_call-400:create_call], "termination pointer not passed as callback context"
+          thunk_start = source.index("xp_kernel_thread_startup:")
+          thunk_end = source.index("auto_mode_thread:", thunk_start)
+          thunk = source[thunk_start:thunk_end]
+          assert "mr      r12, r15" in thunk, "thunk must call pre-resolved termination pointer"
+          assert "bl      get_kernel_export" not in thunk, "thunk must not resolve exports after worker return"
+          assert ".set XP_STAGE_B1_RUNTIME_ENABLED,          0" in source, "runtime must remain gated off"
+          print("XPAUTOSTART1 PASS: fail-closed thread-startup ordering and pre-resolved termination handoff validated")
+          PY
           grep -Fq 'identity_path_usb0' src/xp_auto_mode_stage_b.s
           grep -Fq 'XP_STABLE_SAMPLES' src/xp_auto_mode_stage_b.s
           grep -Fq 'srwi    r12, r15, 24' src/xp_auto_mode_stage_b.s
