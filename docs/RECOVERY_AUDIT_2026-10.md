@@ -117,3 +117,21 @@ complete until the final image is validated on the intended console.
 The current recovery candidate no longer resolves xam.xex or calls XamGetCurrentTitleId, XamCreateFileA, XamWriteFile, or XamCloseHandle. It reads the TitleId from XEX ExecutionInfo at offset 0x0c and uses kernel-native RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose. Public source references supporting the structure and ordinal names include https://github.com/emoose/xbox-reversing/blob/master/xbox360.py, https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord, and https://github.com/zeroKilo/TheSaboteurX360PatcherWV/blob/master/Patcher_Saboteur/Patcher/kernel.h.
 
 This reduces the worker's XAPI dependency but does not prove ExCreateThread with apiThreadStartup=NULL is valid for this freestanding plugin. The ninth NtCreateFile argument's stack slot, export/signature compatibility with the target kernel, and USB object-manager path behavior need hardware validation. Callee-saved-register storage was moved outside the Xenon outgoing parameter home area in the worker, XEX identity parser, and writer before the additional kernel calls. Runtime remains disabled, profile registry remains empty, and no game writes or FPS improvement are claimed.
+
+
+### Medium — bound XEX ExecutionInfo and pin Xbox 360 export ordinals
+
+The kernel-only reader verifies the returned `XEX_HEADER_EXECUTION_INFO`
+pointer lies within the XEX header and that the full 0x18-byte record is inside
+the declared header size before reading TitleId. This matches the non-inline
+pointer behavior described by
+https://github.com/SpeedBreakerProject/speedbreaker/blob/d4c206ab98d4bf01906ec81e6534a1efdcdd29ee/runtime/kernel/module.cpp.
+
+CI now pins the Xbox 360 ordinal values `NtClose=207`, `NtCreateFile=210`,
+`NtWriteFile=255`, and `RtlInitAnsiString=300`. A few legacy/original-Xbox
+SDK-derived headers and Cxbx implementations use 236 for `NtWriteFile`; these
+are not the Xbox 360 table used for this project. The chosen Xbox 360 map is
+referenced at
+https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord.
+This remains static mapping evidence, not confirmation that every target
+dashboard has the same export layout.

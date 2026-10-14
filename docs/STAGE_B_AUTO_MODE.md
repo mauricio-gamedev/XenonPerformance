@@ -126,3 +126,21 @@ References:
 - Xbox 360 kernel ordinal table: https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord
 - Xbox 360 ANSI_STRING, OBJECT_ATTRIBUTES and NtCreateFile declarations: https://github.com/zeroKilo/TheSaboteurX360PatcherWV/blob/master/Patcher_Saboteur/Patcher/kernel.h
 - RtlInitAnsiString and ExCreateThread declarations: https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h
+
+
+## XEX metadata bounds and target-specific ordinal provenance
+
+The TitleId reader requires the `ExecutionInfo` result from
+`RtlImageXexHeaderField` to lie inside the declared XEX header extent and
+checks that the complete 0x18-byte structure is in range before reading
+`TitleId` at offset 0x0c. The API returns an inline value or a pointer to
+metadata inside the header; `ExecutionInfo` uses the pointer form. Reference:
+https://github.com/SpeedBreakerProject/speedbreaker/blob/d4c206ab98d4bf01906ec81e6534a1efdcdd29ee/runtime/kernel/module.cpp.
+
+The kernel-native calls use the Xbox 360 ordinal map: `NtClose=207`
+(`0x00cf`), `NtCreateFile=210` (`0x00d2`), `NtWriteFile=255`
+(`0x00ff`), and `RtlInitAnsiString=300` (`0x012c`). CI now pins these
+values. Do not mix in legacy/original-Xbox `NtWriteFile=236` declarations
+from older Xbox headers or Cxbx sources; they are a different platform mapping.
+Xbox 360 ordinal reference:
+https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord.

@@ -34,8 +34,8 @@
 .set XP_PROFILE_APPLY_OFFSET,             0x0024
 .set XP_PROFILE_REVERT_OFFSET,            0x0028
 .set XP_STABLE_SAMPLES,                   2
-# Deployment gate: keep runtime inert until XapiThreadStartup is resolved
-# after target-compatible thread startup and API behavior are validated.
+# Deployment gate: keep runtime inert until NULL apiThreadStartup behavior,
+# native API calling conventions, and file-system paths are verified on target.
 .set XP_STAGE_B1_RUNTIME_ENABLED,          0
 
 .section .text
@@ -567,6 +567,8 @@ read_module_title_id:
     lis     r12, 0x0010
     cmplw   r10, r12
     bgt     read_title_invalid
+    stw     r28, 0x60(r1)       # XEX header base; local beyond 8 register home slots
+    stw     r10, 0x64(r1)       # declared XEX header size
     add     r3, r28, r10
     addi    r3, r3, -1
     cmplw   r3, r28
@@ -584,6 +586,22 @@ read_module_title_id:
     mr      r28, r3
     cmpwi   r28, 0
     beq     read_title_invalid
+
+    # RtlImageXexHeaderField returns the non-inline ExecutionInfo record
+    # from within the XEX header. Validate the complete 0x18-byte extent.
+    lwz     r9, 0x60(r1)        # XEX header base
+    lwz     r10, 0x64(r1)       # declared header size
+    cmplw   r28, r9
+    blt     read_title_invalid
+    subf    r11, r9, r28        # ExecutionInfo offset from header base
+    cmplw   r11, r10
+    bge     read_title_invalid
+    addi    r12, r11, 0x18
+    cmplw   r12, r11            # reject 32-bit addition wrap
+    blt     read_title_invalid
+    cmplw   r12, r10
+    bgt     read_title_invalid
+
     mr      r3, r28
     mtctr   r31
     bctrl
