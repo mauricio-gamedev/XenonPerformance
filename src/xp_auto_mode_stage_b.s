@@ -12,6 +12,7 @@
 #   - profile_registry_count remains zero, so no game-memory patch can run
 
 .set ORD_EX_CREATE_THREAD,                0x000d
+.set ORD_EX_TERMINATE_THREAD,             0x0019
 .set EX_CREATE_FLAG_SYSTEM,               0x00000002
 .set EX_CREATE_FLAG_CORE4,                 0x10000000
 .set ORD_KE_DELAY_EXECUTION_THREAD,       0x005a
@@ -34,13 +35,14 @@
 .set XP_PROFILE_APPLY_OFFSET,             0x0024
 .set XP_PROFILE_REVERT_OFFSET,            0x0028
 .set XP_STABLE_SAMPLES,                   2
-# Deployment gate: keep runtime inert until NULL apiThreadStartup behavior,
+# Deployment gate: keep runtime inert until the local kernel-only startup shim,
 # native API calling conventions, and file-system paths are verified on target.
 .set XP_STAGE_B1_RUNTIME_ENABLED,          0
 
 .section .text
 .global _start
 .global auto_mode_thread
+.global xp_kernel_thread_startup
 .global capture_execution_identity
 .global read_module_title_id
 .global write_identity_file
@@ -61,7 +63,7 @@ _start:
     bne     loader_success
 
     # Fail closed by default: this build is diagnostic/preflight only.
-    # The worker uses kernel-native APIs; NULL apiThreadStartup remains unvalidated.
+    # The local assembly startup shim and native API path are not yet hardware-validated.
     li      r12, XP_STAGE_B1_RUNTIME_ENABLED
     cmpwi   r12, 1
     bne     loader_success
@@ -79,7 +81,8 @@ _start:
     addi    r3, r1, 0x40
     lis     r4, 1              # 0x00010000 = 64 KiB worker stack
     addi    r5, r1, 0x44
-    li      r6, 0              # NULL API startup contract remains unverified on target
+    lis     r6, xp_kernel_thread_startup@ha
+    addi    r6, r6, xp_kernel_thread_startup@l
     lis     r7, auto_mode_thread@ha
     addi    r7, r7, auto_mode_thread@l
     li      r8, 0
@@ -110,6 +113,40 @@ loader_success:
     addi    r1, r1, 0x100
     mtlr    r0
     blr
+
+# Kernel-only ExCreateThread adapter:
+# IN r3 = StartRoutine, r4 = StartContext, r5 = ExitCode.
+# Calls StartRoutine(StartContext), then terminates this thread with ExitCode.
+# This callback intentionally uses no XAPI or C runtime helper.
+xp_kernel_thread_startup:
+    mflr    r0
+    stwu    r1, -0x80(r1)
+    stw     r0,  0x08(r1)
+    stw     r14, 0x0c(r1)
+    stw     r15, 0x10(r1)
+    stw     r16, 0x14(r1)
+
+    mr      r14, r3             # StartRoutine
+    mr      r15, r4             # StartContext
+    mr      r16, r5             # ExitCode
+
+    mr      r3, r15
+    mtctr   r14
+    bctrl
+
+    li      r3, ORD_EX_TERMINATE_THREAD
+    bl      get_kernel_export
+    cmpwi   r3, 0
+    beq     xp_kernel_thread_halt
+    mr      r12, r3
+    mr      r3, r16
+    mtctr   r12
+    bctrl
+
+xp_kernel_thread_halt:
+    # ExTerminateThread is not expected to return. If it does, do not return
+    # through the kernel startup frame with an unowned thread state.
+    b       xp_kernel_thread_halt
 
 auto_mode_thread:
     mflr    r0

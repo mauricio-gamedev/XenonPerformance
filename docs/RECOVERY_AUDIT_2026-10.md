@@ -135,3 +135,20 @@ referenced at
 https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord.
 This remains static mapping evidence, not confirmation that every target
 dashboard has the same export layout.
+
+
+### Critical blocker update — local kernel-only thread-startup shim added
+
+The branch now passes `xp_kernel_thread_startup` as the `apiThreadStartup`
+callback to `ExCreateThread`. This assembly shim receives the start routine,
+context, and exit code, invokes the worker with its context, then resolves and
+calls Xbox 360 kernel ordinal 25 (`ExTerminateThread`) if the worker returns.
+It does not call XAPI or the C runtime. CI gates pin the ordinal and verify that
+the local shim is wired into the creation call.
+
+This replaces the previous `apiThreadStartup=NULL` candidate, but it does not
+prove that the kernel invokes this callback with precisely the expected
+argument layout on the target dashboard, nor that `ExTerminateThread` can be
+used this way from this plugin. Runtime remains disabled; the callback ABI,
+termination handoff, kernel export map, NtCreateFile stack argument and USB
+object-manager path still require physical-console validation.

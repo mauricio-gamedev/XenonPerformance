@@ -2,7 +2,7 @@
 
 ## Current state: preflight only
 
-**Runtime collection is disabled. Do not install this XEX or add it to DashLaunch launch.ini.** The branch keeps XP_STAGE_B1_RUNTIME_ENABLED=0. The worker no longer resolves xam.xex or calls XAM exported functions: it reads TitleId from the active XEX ExecutionInfo and uses kernel-native RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose for the identity report. However, ExCreateThread still receives apiThreadStartup=NULL, which has not been verified for this freestanding plugin and target kernel. The USB object-manager path, native file API calling convention, kernel export map, and stack argument for NtCreateFile are also unverified on the console. This is still a CI/preflight artifact; it does not create a thread, poll titles, write a report, or modify game memory.
+**Runtime collection is disabled. Do not install this XEX or add it to DashLaunch launch.ini.** The branch keeps XP_STAGE_B1_RUNTIME_ENABLED=0. The worker reads TitleId from the active XEX ExecutionInfo and uses kernel-native RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose; it no longer resolves xam.xex or calls XAM exports. ExCreateThread now receives the local assembly callback xp_kernel_thread_startup, which dispatches the worker and calls ExTerminateThread if it returns. That callback ABI, termination handoff, USB object-manager path, native file API calling convention, kernel export map, and stack argument for NtCreateFile remain unverified on the console. This is still a CI/preflight artifact; it does not create a thread, poll titles, write a report, or modify game memory.
 
 The sections below document the intended Stage B1 runtime and safeguards that must be retained after hardware validation.
 
@@ -119,7 +119,7 @@ console validation before deployment.
 
 Title ID sampling now reads XEX_HEADER_EXECUTION_INFO (key 0x00040006) through RtlImageXexHeaderField, then reads ExecutionInfo.TitleId at offset 0x0c. The reader checks the loader entry, XEX2 magic, bounded header size, ExecutionInfo pointer/range, and nonzero TitleId. The worker repeats the module-pointer and TitleId check after identity capture to close the transition race.
 
-Identity output uses the Xbox kernel export candidates RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose. It treats nonzero NTSTATUS values and short writes as failures. This removes direct XAM calls from the worker, but it does not make the worker safe to run. The null apiThreadStartup behavior, kernel ordinals/signatures for the target dashboard, object-manager paths for USB storage, and stack-passed ninth argument to NtCreateFile still require console validation. Keep XP_STAGE_B1_RUNTIME_ENABLED at zero.
+Identity output uses the Xbox kernel export candidates RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose. It treats nonzero NTSTATUS values and short writes as failures. This removes direct XAM calls from the worker, but it does not make the worker safe to run. The local xp_kernel_thread_startup callback and ExTerminateThread handoff, kernel ordinals/signatures for the target dashboard, object-manager paths for USB storage, and stack-passed ninth argument to NtCreateFile still require console validation. Keep XP_STAGE_B1_RUNTIME_ENABLED at zero.
 
 References:
 - XEX execution ID layout: https://github.com/emoose/xbox-reversing/blob/master/xbox360.py
@@ -144,3 +144,16 @@ values. Do not mix in legacy/original-Xbox `NtWriteFile=236` declarations
 from older Xbox headers or Cxbx sources; they are a different platform mapping.
 Xbox 360 ordinal reference:
 https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord.
+
+
+## Local kernel-only startup callback (still preflight-only)
+
+The current entry passes `xp_kernel_thread_startup` as the
+`ExCreateThread` `apiThreadStartup` callback, rather than passing NULL or
+linking the freestanding image against `xapilib.lib`. Its contract mirrors
+the public callback signature: receive the start routine, context and exit
+code; call the worker with its context; if the worker returns, resolve and call
+`ExTerminateThread` with the exit code. This shim uses only assembly and
+the Xbox kernel export resolver, so it avoids direct XAPI/CRT dependencies.
+The callback and exit handoff are still unverified on a physical target.
+`XP_STAGE_B1_RUNTIME_ENABLED` remains zero; do not install the XEX.

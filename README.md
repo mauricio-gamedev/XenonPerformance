@@ -6,12 +6,14 @@ research.
 ## Current milestone: Stage B1 preflight
 
 **The runtime is deliberately disabled. Do not install this XEX or add it to
-DashLaunch `launch.ini`.** The worker has been refactored to read TitleId from
-the active XEX ExecutionInfo and use kernel-native file APIs instead of XAM
-exports. However, ExCreateThread still receives apiThreadStartup=NULL, and
-that start contract, target kernel export map, ninth NtCreateFile stack
-argument, and USB object-manager paths have not been validated on hardware.
-A successful assembly/XEX build does not establish runtime safety.
+DashLaunch `launch.ini`.** The worker reads TitleId from the active XEX
+ExecutionInfo and uses kernel-native file APIs instead of XAM exports.
+ExCreateThread now receives the local assembly callback
+`xp_kernel_thread_startup`, which invokes the worker and calls
+`ExTerminateThread` if it returns. That callback/termination contract, target
+kernel export map, ninth NtCreateFile stack argument, and USB object-manager
+paths have not been validated on hardware. A successful build does not
+establish runtime safety.
 
 The current build sets `XP_STAGE_B1_RUNTIME_ENABLED=0`. On DLL attach it
 returns successfully without creating a worker, polling a title, or writing an

@@ -114,6 +114,11 @@ jobs:
           echo 'XPAUTOB2 stage=source-gates begin'
           grep -Fq 'ORD_NT_CREATE_FILE' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_EX_CREATE_THREAD' src/xp_auto_mode_stage_b.s
+          grep -Eq '^\.set ORD_EX_TERMINATE_THREAD,[[:space:]]+0x0019$' src/xp_auto_mode_stage_b.s
+          grep -Fq 'xp_kernel_thread_startup:' src/xp_auto_mode_stage_b.s
+          grep -Fq 'lis     r6, xp_kernel_thread_startup@ha' src/xp_auto_mode_stage_b.s
+          grep -Fq 'li      r3, ORD_EX_TERMINATE_THREAD' src/xp_auto_mode_stage_b.s
+          ! grep -Fq 'apiThreadStartup=NULL' src/xp_auto_mode_stage_b.s
           grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000' src/xp_auto_mode_stage_b.s
           grep -Fq 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
           grep -Fq 'ori     r9, r9, EX_CREATE_FLAG_SYSTEM' src/xp_auto_mode_stage_b.s
@@ -283,19 +288,19 @@ jobs:
 
           This is a diagnostic/preflight artifact only. The runtime gate is
           explicitly disabled (XP_STAGE_B1_RUNTIME_ENABLED=0) because the
-          worker has been refactored to use kernel-native XEX metadata and file
-          APIs instead of XAM exports. However, ExCreateThread still receives
-          apiThreadStartup=NULL, and native USB path semantics plus the target
-          kernel's export map have not been verified on hardware. A successful
-          assembly/XEX build is not proof that it is safe to execute.
+          worker now uses a local kernel-only startup shim instead of linking
+          XapiThreadStartup. The shim dispatches the worker and uses
+          ExTerminateThread if it returns. This callback ABI, native USB path
+          semantics, and target kernel export map have not been verified on
+          hardware. A successful assembly/XEX build is not proof that it is safe.
 
           This artifact performs no runtime collection, creates no thread, and
           writes no identity report. The compile-time profile registry is empty,
           game-memory writes are disabled, and no FPS gain is claimed.
 
-          Next gate: validate null apiThreadStartup, native NtCreateFile stack
-          argument handling, kernel exports, and USB object-manager paths on the
-          intended console. Keep runtime disabled until that validation passes.
+          Next gate: validate the local startup shim, ExTerminateThread handoff,
+          NtCreateFile stack argument, kernel exports, and USB object-manager
+          paths on the intended console. Keep runtime disabled until then.
           TXT
 
           cp "$REL/XenonPerformancePlugin-Stage-B1.xex" \
@@ -315,6 +320,7 @@ jobs:
             'runtime_enabled': False,
             'deployment_blocked': True,
             'startup_context_verified': False,
+            'thread_startup': 'xp_kernel_thread_startup (not hardware-validated)',
             'image_base': '0x91D00000',
             'initial_delay_ms': 10000,
             'poll_interval_ms': 5000,
@@ -350,6 +356,7 @@ jobs:
           assert report['runtime_enabled'] is False
           assert report['deployment_blocked'] is True
           assert report['startup_context_verified'] is False
+          assert report['thread_startup'] == 'xp_kernel_thread_startup (not hardware-validated)'
           assert report['profile_count'] == 0
           assert report['hardware_writes_enabled'] is False
           assert report['game_memory_writes'] == 0
