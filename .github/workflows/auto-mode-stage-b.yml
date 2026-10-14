@@ -62,7 +62,7 @@ jobs:
           grep -F 'policy.dry_run || !policy.armed' src/xp_auto_mode.c
           grep -F 'XP_AUTO_UNKNOWN_TITLE' src/xp_auto_mode.c
           grep -F 'lis     r4, 1' src/xp_auto_mode_stage_b.s
-          grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000
+          grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000' src/xp_auto_mode_stage_b.s
           grep -F 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
           grep -F 'ori     r9, r9, EX_CREATE_FLAG_SYSTEM' src/xp_auto_mode_stage_b.s
           grep -F 'cmpw    r23, r18' src/xp_auto_mode_stage_b.s
@@ -114,7 +114,7 @@ jobs:
           echo 'XPAUTOB2 stage=source-gates begin'
           grep -Fq 'ORD_XAM_GET_CURRENT_TITLE_ID' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_EX_CREATE_THREAD' src/xp_auto_mode_stage_b.s
-          grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000
+          grep -Eq '^\.set EX_CREATE_FLAG_CORE4,[[:space:]]+0x10000000' src/xp_auto_mode_stage_b.s
           grep -Fq 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
           grep -Fq 'ori     r9, r9, EX_CREATE_FLAG_SYSTEM' src/xp_auto_mode_stage_b.s
           grep -Fq 'XP_STAGE_B1_RUNTIME_ENABLED,          0' src/xp_auto_mode_stage_b.s
