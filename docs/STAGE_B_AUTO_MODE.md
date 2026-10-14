@@ -97,3 +97,30 @@ Only a physical RGH/JTAG Xbox 360 can validate thread startup, XAM/API behavior,
 DashLaunch lifecycle, and title transitions. The runtime is not enabled pending
 resolution of the startup blocker, so the current build is not a candidate for
 that hardware test yet. No FPS gain is claimed.
+
+
+## Startup linkage finding — runtime gate remains closed
+
+The unresolved symbol is more specific now. A public SDK-compatible header declares
+`XapiThreadStartup` without the `NTSYSAPI` / `EXPORTNUM` pattern used for
+nearby kernel exports, while common plugin code passes the function pointer
+directly as `ExCreateThread`'s `apiThreadStartup` argument. That is evidence
+for treating it as an XAPI library helper, **not** as a proven XboxKrnl/XAM
+ordinal that can be safely guessed.
+
+References:
+- [SDK-compatible declaration and export annotations](https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h)
+- [Community plugin call site](https://github.com/Xenomega/ArchLoader/blob/master/ArchLauncher/ArchLauncher.cpp)
+- [XDK linking overview](https://github.com/MrMilenko/OXDK/blob/main/docs/xbox360.md), which states that OXDK does not ship Microsoft's XDK code and that real titles link against the supplied XDK's libraries, including `xapilib`.
+
+The current CI image is a freestanding assembly payload wrapped and packaged as a
+XEX; it does not link against the supplied Microsoft `xapilib.lib`. Therefore
+these references do not establish a safe address or callable symbol for this
+image. Do not resolve this by inventing an ordinal, scanning for a byte pattern,
+or turning the runtime flag on.
+
+The viable next paths are either (1) build/link through an authorized,
+target-compatible XDK `xapilib.lib` route and inspect the final import/code
+layout, or (2) redesign the worker to avoid XAPI-dependent startup and validate
+every replacement kernel-native API separately. Both paths still require
+console validation before deployment.

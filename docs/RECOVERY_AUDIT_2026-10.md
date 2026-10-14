@@ -89,3 +89,24 @@ Because `XapiThreadStartup` remains unresolved, `XP_STAGE_B1_RUNTIME_ENABLED` is
 ### Medium — worker scheduling inherited the loader thread's processor
 
 The resident worker previously passed only the system-thread flag to `ExCreateThread`, leaving processor placement dependent on the loader thread/context. Microsoft's Xbox 360 threading guidance says software threads should be assigned explicitly. The recovery branch now requests `EX_CREATE_FLAG_CORE4` (`0x10000000`) with the system-thread flag at creation; the bit value is supported by a public SDK-compatible header reference: https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h. The 64 KiB stack size is retained. This is a static configuration improvement, not proof of actual placement on every dashboard/kernel, and runtime remains disabled pending thread-startup resolution.
+
+
+### Critical — XapiThreadStartup is likely library-provided, not a verified export
+
+The public SDK-compatible header at
+https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h declares
+`XapiThreadStartup` without an adjacent `NTSYSAPI` or `EXPORTNUM` annotation,
+while known exports in the same header use those annotations. Public plugin
+examples pass the function address directly to `ExCreateThread` instead of
+resolving an ordinal. OXDK's Xbox 360 build guide also explicitly states that
+it ships no Microsoft XDK code and requires the supplied XDK libraries,
+including `xapilib`: https://github.com/MrMilenko/OXDK/blob/main/docs/xbox360.md.
+
+Together, these are strong evidence that the current freestanding image cannot
+assume `XapiThreadStartup` is discoverable through the existing kernel/XAM
+ordinal resolver. They do not identify a safe function address or prove a
+version-independent ABI. The CI build currently wraps freestanding assembly and
+does not link `xapilib.lib`; runtime stays disabled. Next options are to use an
+authorized, target-compatible XDK library-link route and inspect its output, or
+redesign around individually verified kernel-native APIs. Neither option is
+complete until the final image is validated on the intended console.
