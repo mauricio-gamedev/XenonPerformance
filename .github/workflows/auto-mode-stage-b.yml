@@ -1,0 +1,377 @@
+name: Xenon Performance Stage B1 Preflight
+
+on:
+  push:
+    branches: [main, xenon-performance-stage-b-auto-mode, recovery/stage-b1-failure-rollback]
+    paths:
+      - 'src/xp_auto_mode.c'
+      - 'src/xp_auto_mode.h'
+      - 'src/xp_auto_mode_stage_b.s'
+      - 'tests/test_auto_mode.c'
+      - 'docs/STAGE_B_AUTO_MODE.md'
+      - '.github/workflows/auto-mode-stage-b.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/xp_auto_mode.c'
+      - 'src/xp_auto_mode.h'
+      - 'src/xp_auto_mode_stage_b.s'
+      - 'tests/test_auto_mode.c'
+      - 'docs/STAGE_B_AUTO_MODE.md'
+      - '.github/workflows/auto-mode-stage-b.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xenon-performance-stage-b-auto-mode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-core:
+    name: Validate stable exact-match Auto Mode state machine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build portable Auto Mode model
+        run: |
+          set -euo pipefail
+          mkdir -p build_auto_mode
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+             src/xp_auto_mode.c tests/test_auto_mode.c \
+             -o build_auto_mode/xp_auto_mode_tests
+
+      - name: Run state-machine tests
+        run: |
+          set -euo pipefail
+          ./build_auto_mode/xp_auto_mode_tests | tee build_auto_mode/XPAUTO5.txt
+          grep -F 'XPAUTO5 PASS' build_auto_mode/XPAUTO5.txt
+
+      - name: Prove policy defaults and interval
+        run: |
+          set -euo pipefail
+          grep -F '#define XP_AUTO_MODE_POLL_INTERVAL_MS 5000u' src/xp_auto_mode.h
+          grep -F '#define XP_AUTO_MODE_INITIAL_DELAY_MS 10000u' src/xp_auto_mode.h
+          grep -F '#define XP_AUTO_MODE_STABLE_SAMPLES 2u' src/xp_auto_mode.h
+          grep -F 'xp_auto_mode_is_collectable_title' src/xp_auto_mode.c
+          grep -F 'pending_module_cookie' src/xp_auto_mode.c
+          grep -F 'policy.dry_run || !policy.armed' src/xp_auto_mode.c
+          grep -F 'XP_AUTO_UNKNOWN_TITLE' src/xp_auto_mode.c
+          grep -F 'lis     r4, 1' src/xp_auto_mode_stage_b.s
+          grep -F 'cmpw    r23, r18' src/xp_auto_mode_stage_b.s
+          grep -F 'XP_PROFILE_REVERT_OFFSET(r3)' src/xp_auto_mode_stage_b.s
+          grep -F 'auto_mode_rollback_wait' src/xp_auto_mode_stage_b.s
+          grep -F '0x118(r1)' src/xp_auto_mode_stage_b.s
+          grep -F 'XP_AUTO_ROLLBACK_FAILED' src/xp_auto_mode.c
+          grep -F 'profile_revert_failed' src/xp_auto_mode_stage_b.s
+          echo 'XPAUTOPOLICY4 PASS: exact match, verified rollback retry, apply-failure latch and worker stack guard present'
+
+      - name: Upload core validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: XenonPerformance-Stage-B1-Preflight-Core
+          retention-days: 14
+          path: build_auto_mode/XPAUTO5.txt
+
+  build-resident-xex:
+    name: Build resident POWERPCBE stable collector DLL
+    needs: validate-core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deterministic build set
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential binutils binutils-powerpc-linux-gnu \
+            cmake ninja-build git python3 ca-certificates zip
+
+      - name: Build Stage B1 resident DLL
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/build_stage_b1"
+          SYNTH_SRC="$OUT/synthxex-src"
+          SYNTH_BUILD="$OUT/synthxex-build"
+          REL="$OUT/release"
+          LOG="$OUT/build.log"
+          SYNTH_COMMIT="48d1453a55468aa2f8a211db0b20edd594ef5be3"
+          mkdir -p "$OUT" "$REL"
+          : > "$LOG"
+          exec > >(tee -a "$LOG") 2>&1
+
+          echo 'XPAUTOB2 stage=source-gates begin'
+          grep -Fq 'ORD_XAM_GET_CURRENT_TITLE_ID' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_EX_CREATE_THREAD' src/xp_auto_mode_stage_b.s
+          grep -Fq 'XP_STAGE_B1_RUNTIME_ENABLED,          0' src/xp_auto_mode_stage_b.s
+          grep -Fq 'IMAGE_EXPORT_DIRECTORY' src/xp_auto_mode_stage_b.s
+          grep -Fq 'cmplw   r11, r4' src/xp_auto_mode_stage_b.s
+          grep -Fq 'li      r9, 0x5a4d' src/xp_auto_mode_stage_b.s
+          grep -Fq 'andi.   r4, r4, 0xffff' src/xp_auto_mode_stage_b.s
+          grep -Fq 'li      r9, 0x4550' src/xp_auto_mode_stage_b.s
+          grep -Fq 'cmpwi   r4, 0x010b' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_KE_DELAY_EXECUTION_THREAD' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_MM_IS_ADDRESS_VALID' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_RTL_IMAGE_XEX_HEADER_FIELD' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_XAM_CREATE_FILE_A' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ORD_XAM_WRITE_FILE' src/xp_auto_mode_stage_b.s
+          grep -Fq 'identity_path_usb0' src/xp_auto_mode_stage_b.s
+          grep -Fq 'XP_STABLE_SAMPLES' src/xp_auto_mode_stage_b.s
+          grep -Fq 'srwi    r12, r15, 24' src/xp_auto_mode_stage_b.s
+          grep -Fq 'XEX_HEADER_EXECUTION_INFO' src/xp_auto_mode_stage_b.s
+          grep -A1 '^profile_registry_count:' src/xp_auto_mode_stage_b.s | grep -Eq '\.long[[:space:]]+0'
+          ! grep -Eq '\.loaded|NtCreateFile|NtWriteFile|XNotifyQueueUI|MmSetAddressProtect|MmDoubleMapMemory|HalSendSMCMessage|HalWriteArgonEeprom' \
+            src/xp_auto_mode_stage_b.s
+          echo 'XPAUTOB2 stage=source-gates pass runtime_enabled=0 deployment_blocked=1 profile_count=0 game_writes=0 collector_attempts=0'
+
+          echo 'XPAUTOB1 stage=powerpc begin'
+          powerpc-linux-gnu-as -mregnames -mppc64 \
+            src/xp_auto_mode_stage_b.s -o "$OUT/xp_auto_mode_stage_b.o"
+          powerpc-linux-gnu-ld \
+            -Ttext=0x91D10000 -e _start \
+            -o "$OUT/xp_auto_mode_stage_b.elf" \
+            "$OUT/xp_auto_mode_stage_b.o"
+          powerpc-linux-gnu-objcopy -O binary -j .text \
+            "$OUT/xp_auto_mode_stage_b.elf" "$OUT/xp_auto_mode_stage_b.bin"
+          powerpc-linux-gnu-objdump -dr "$OUT/xp_auto_mode_stage_b.elf" \
+            > "$REL/xp_auto_mode_stage_b.disasm.txt"
+          powerpc-linux-gnu-nm -n "$OUT/xp_auto_mode_stage_b.elf" \
+            > "$REL/xp_auto_mode_stage_b.symbols.txt"
+          test -s "$OUT/xp_auto_mode_stage_b.bin"
+          grep -q '<_start>' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q '<auto_mode_thread>' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q '<capture_execution_identity>' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q '<write_identity_file>' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q '<find_exact_profile>' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q 'stwu' "$REL/xp_auto_mode_stage_b.disasm.txt"
+          ! grep -Eq '\bstdu\b|\bstd\b|\bld\b|\bclrldi\b' \
+            "$REL/xp_auto_mode_stage_b.disasm.txt"
+          grep -q '^91d10000 T _start$' "$REL/xp_auto_mode_stage_b.symbols.txt"
+          echo 'XPAUTOB1 stage=powerpc pass text_base=0x91D10000'
+
+          printf '.section .text\n.globl _start\n_start:\n.incbin "%s"\n' \
+            "$OUT/xp_auto_mode_stage_b.bin" > "$OUT/wrapper.s"
+          as --32 "$OUT/wrapper.s" -o "$OUT/wrapper.o"
+          ld -mi386pe --dll --subsystem 14 \
+            --major-subsystem-version 1 --minor-subsystem-version 0 \
+            --major-os-version 0 --minor-os-version 0 \
+            --disable-dynamicbase --image-base 0x91D00000 \
+            --section-alignment 0x10000 --file-alignment 0x200 \
+            --disable-long-section-names -e _start \
+            -o "$OUT/XenonPerformancePlugin.exe" "$OUT/wrapper.o"
+
+          python3 - "$OUT/XenonPerformancePlugin.exe" "$OUT/xp_auto_mode_stage_b.bin" <<'PY'
+          import hashlib,struct,sys
+          pe_path, raw_path = sys.argv[1:]
+          data = bytearray(open(pe_path, 'rb').read())
+          raw = open(raw_path, 'rb').read()
+          errors = []
+          if data[:2] != b'MZ': errors.append('MZ')
+          pe = struct.unpack_from('<I', data, 0x3c)[0]
+          if data[pe:pe+4] != b'PE\0\0': errors.append('PE')
+          old_machine = struct.unpack_from('<H', data, pe + 4)[0]
+          if old_machine != 0x014c: errors.append(f'pre-machine=0x{old_machine:04x}')
+          struct.pack_into('<H', data, pe + 4, 0x01F2)
+          open(pe_path, 'wb').write(data)
+
+          machine = struct.unpack_from('<H', data, pe + 4)[0]
+          section_count = struct.unpack_from('<H', data, pe + 6)[0]
+          optional_size = struct.unpack_from('<H', data, pe + 20)[0]
+          characteristics = struct.unpack_from('<H', data, pe + 22)[0]
+          optional = pe + 24
+          entry = struct.unpack_from('<I', data, optional + 16)[0]
+          image_base = struct.unpack_from('<I', data, optional + 28)[0]
+          alignment = struct.unpack_from('<I', data, optional + 32)[0]
+          subsystem = struct.unpack_from('<H', data, optional + 68)[0]
+          if machine != 0x01F2: errors.append('machine')
+          if not (characteristics & 0x2000): errors.append('not-dll')
+          if subsystem != 0x000E: errors.append('subsystem')
+          if image_base != 0x91D00000: errors.append('image-base')
+          if alignment != 0x10000: errors.append('alignment')
+          if image_base + entry != 0x91D10000: errors.append('entry-address')
+          section_table = optional + optional_size
+          mapped = False
+          for index in range(section_count):
+              section = section_table + index * 40
+              virtual_size, virtual_address, raw_size, raw_pointer = \
+                  struct.unpack_from('<IIII', data, section + 8)
+              if virtual_address <= entry < virtual_address + max(virtual_size, raw_size):
+                  payload = raw_pointer + (entry - virtual_address)
+                  mapped = True
+                  if data[payload:payload+len(raw)] != raw:
+                      errors.append('payload-mismatch')
+          if not mapped: errors.append('entry-map')
+          if errors: raise SystemExit('XPPEAUTOB FAIL ' + ','.join(errors))
+          print('XPPEAUTOB PASS machine=POWERPCBE sha256=' + hashlib.sha256(data).hexdigest())
+          PY
+
+          echo 'XPAUTOB1 stage=synthxex begin'
+          git init -q "$SYNTH_SRC"
+          git -C "$SYNTH_SRC" remote add origin https://github.com/OpenXeChain/SynthXEX.git
+          git -C "$SYNTH_SRC" fetch -q --depth 1 origin "$SYNTH_COMMIT"
+          git -C "$SYNTH_SRC" -c advice.detachedHead=false checkout -q --detach FETCH_HEAD
+          test "$(git -C "$SYNTH_SRC" rev-parse HEAD)" = "$SYNTH_COMMIT"
+          cmake -S "$SYNTH_SRC" -B "$SYNTH_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$SYNTH_BUILD" --parallel 4
+          "$SYNTH_BUILD/synthxex" \
+            --input "$OUT/XenonPerformancePlugin.exe" \
+            --output "$REL/XenonPerformancePlugin-Stage-B1.xex" \
+            --type dll
+
+          python3 - "$REL/XenonPerformancePlugin-Stage-B1.xex" <<'PY'
+          import hashlib,struct,sys
+          path = sys.argv[1]
+          data = open(path, 'rb').read()
+          errors = []
+          if data[:4] != b'XEX2': errors.append('XEX2')
+          if len(data) < 256: errors.append('size')
+          if not errors:
+              flags, pe_offset, _, _, count = struct.unpack('>IIIII', data[4:24])
+              if flags != 0x8: errors.append(f'module-flags=0x{flags:x}')
+              security_offset = struct.unpack_from('>I', data, 0x10)[0]
+              load_address = struct.unpack_from('>I', data, security_offset + 0x110)[0]
+              if load_address != 0x91D00000:
+                  errors.append(f'load-address=0x{load_address:08x}')
+              ids = [struct.unpack('>II', data[24+i*8:32+i*8])[0]
+                     for i in range(count)]
+              if 0x00010100 not in ids: errors.append('entry-header')
+              entry_value = next((struct.unpack('>II', data[24+i*8:32+i*8])[1]
+                                  for i in range(count)
+                                  if struct.unpack('>II', data[24+i*8:32+i*8])[0] == 0x00010100),
+                                 0)
+              if entry_value != 0x91D10000:
+                  errors.append(f'xex-entry=0x{entry_value:08x}')
+              if pe_offset >= len(data): errors.append('pe-offset')
+              if pe_offset < len(data):
+                  pe_data = data[pe_offset:]
+                  pe = struct.unpack_from('<I', pe_data, 0x3c)[0]
+                  machine = struct.unpack_from('<H', pe_data, pe + 4)[0]
+                  if machine != 0x01F2:
+                      errors.append(f'embedded-machine=0x{machine:04x}')
+          if errors: raise SystemExit('XPXEXAUTOB FAIL ' + ','.join(errors))
+          print('XPXEXAUTOB PASS sha256=' + hashlib.sha256(data).hexdigest())
+          PY
+
+          cat > "$REL/README_FIRST_RUN.txt" <<'TXT'
+          XENON PERFORMANCE — STAGE B1 PREFLIGHT BUILD
+
+          DO NOT INSTALL OR ADD THIS XEX TO launch.ini.
+
+          This is a diagnostic/preflight artifact only. The runtime gate is
+          explicitly disabled (XP_STAGE_B1_RUNTIME_ENABLED=0) because the
+          freestanding worker's XapiThreadStartup entry is not yet resolved
+          through a verified target-compatible import path. The worker calls
+          XAM APIs, so a successful assembly/XEX build is not proof that it is
+          safe to execute on a physical console.
+
+          This artifact performs no runtime collection, creates no thread, and
+          writes no identity report. The compile-time profile registry is empty,
+          game-memory writes are disabled, and no FPS gain is claimed.
+
+          Next gate: resolve the correct XapiThreadStartup linkage from a trusted
+          SDK/import source, or redesign the collector around verified APIs;
+          then add startup-context tests and validate on the intended console.
+          TXT
+
+          cp "$REL/XenonPerformancePlugin-Stage-B1.xex" \
+             "$REL/XenonPerformancePlugin.xex"
+          cp "$OUT/XenonPerformancePlugin.exe" "$REL/"
+          cp src/xp_auto_mode_stage_b.s "$REL/"
+          cp docs/STAGE_B_AUTO_MODE.md "$REL/"
+
+          python3 - "$REL/XenonPerformancePlugin.xex" "$REL/XP_AUTO_MODE_STAGE_B1.json" <<'PY'
+          import hashlib,json,os,sys
+          path, output = sys.argv[1:]
+          data = open(path, 'rb').read()
+          report = {
+            'schema': 'XP_AUTO_MODE_STAGE_B1_PREFLIGHT',
+            'stage': 'B1-preflight',
+            'architecture': 'diagnostic DLL / strict POWERPCBE',
+            'runtime_enabled': False,
+            'deployment_blocked': True,
+            'startup_context_verified': False,
+            'image_base': '0x91D00000',
+            'initial_delay_ms': 10000,
+            'poll_interval_ms': 5000,
+            'stable_samples': 2,
+            'identity': ['title_id', 'media_id', 'version', 'base_version',
+                         'xex_security_info_header_hash_fingerprint'],
+            'profile_count': 0,
+            'unknown_title_behavior': 'no-op',
+            'dashboard_behavior': 'runtime disabled; no title polling',
+            'filesystem_io': 'none; runtime disabled',
+            'collector_paths': [],
+            'collector_attempts_per_identity_transition': 0,
+            'notifications': False,
+            'hardware_writes_enabled': False,
+            'game_memory_writes': 0,
+            'fps_gain_claimed': False,
+            'xex': {
+              'name': os.path.basename(path),
+              'size': len(data),
+              'sha256': hashlib.sha256(data).hexdigest()
+            }
+          }
+          open(output, 'w').write(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+          # Fail the pipeline if any generated instructions/manifest make this
+          # inert preflight artifact look deployable.
+          grep -Fq 'DO NOT INSTALL' "$REL/README_FIRST_RUN.txt"
+          python3 - "$REL/XP_AUTO_MODE_STAGE_B1.json" <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert report['runtime_enabled'] is False
+          assert report['deployment_blocked'] is True
+          assert report['startup_context_verified'] is False
+          assert report['profile_count'] == 0
+          assert report['hardware_writes_enabled'] is False
+          assert report['game_memory_writes'] == 0
+          assert report['fps_gain_claimed'] is False
+          assert report['filesystem_io'] == 'none; runtime disabled'
+          assert report['collector_paths'] == []
+          assert report['collector_attempts_per_identity_transition'] == 0
+          print('XPPREFLIGHT1 PASS: runtime disabled, deployment blocked, no collection or writes')
+          PY
+
+          (cd "$REL" && sha256sum * > SHA256SUMS.txt)
+          (cd "$REL" && zip -9 XenonPerformance-Stage-B1-Preflight.zip \
+            XenonPerformancePlugin.xex XenonPerformancePlugin-Stage-B1.xex \
+            XenonPerformancePlugin.exe xp_auto_mode_stage_b.s \
+            xp_auto_mode_stage_b.disasm.txt xp_auto_mode_stage_b.symbols.txt \
+            STAGE_B_AUTO_MODE.md README_FIRST_RUN.txt XP_AUTO_MODE_STAGE_B1.json \
+            SHA256SUMS.txt)
+          echo 'XPAUTOB2 PASS image_base=0x91D00000 runtime_enabled=0 deployment_blocked=1 profile_count=0 game_writes=0'
+
+      - name: Upload diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XenonPerformance-Stage-B1-Preflight-Diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build_stage_b1/build.log
+            build_stage_b1/xp_auto_mode_stage_b.elf
+            build_stage_b1/xp_auto_mode_stage_b.bin
+            build_stage_b1/release/xp_auto_mode_stage_b.disasm.txt
+            build_stage_b1/release/xp_auto_mode_stage_b.symbols.txt
+            build_stage_b1/XenonPerformancePlugin.exe
+
+      - name: Upload Stage B1 bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XenonPerformance-Stage-B1-Preflight
+          compression-level: 9
+          retention-days: 14
+          path: build_stage_b1/release/
