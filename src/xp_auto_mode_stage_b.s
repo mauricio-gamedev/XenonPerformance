@@ -17,17 +17,13 @@
 .set ORD_KE_DELAY_EXECUTION_THREAD,       0x005a
 .set ORD_MM_IS_ADDRESS_VALID,             0x00bf
 .set ORD_NT_CLOSE,                        0x00cf
+.set ORD_NT_CREATE_FILE,                   0x00d2
+.set ORD_NT_WRITE_FILE,                    0x00ff
+.set ORD_RTL_INIT_ANSI_STRING,              0x012c
 .set ORD_RTL_IMAGE_XEX_HEADER_FIELD,      0x012b
 .set ORD_XEX_EXECUTABLE_MODULE_HANDLE,    0x0193
-.set ORD_XEX_GET_MODULE_HANDLE,           0x0195
-.set ORD_XEX_GET_PROCEDURE_ADDRESS,       0x0197
-
-.set ORD_XAM_GET_CURRENT_TITLE_ID,        0x01cf
-.set ORD_XAM_CLOSE_HANDLE,                0x0414
-.set ORD_XAM_WRITE_FILE,                  0x041e
-.set ORD_XAM_CREATE_FILE_A,               0x0447
-
 .set XEX_HEADER_EXECUTION_INFO,           0x00040006
+.set XEX_EXECUTION_INFO_TITLE_ID_OFFSET,   0x000c
 .set XEX2_MAGIC,                          0x58455832
 .set LDR_XEX_HEADER_BASE_OFFSET,          0x0058
 .set XEX_SECURITY_HEADER_DIGEST,          0x0164
@@ -46,6 +42,7 @@
 .global _start
 .global auto_mode_thread
 .global capture_execution_identity
+.global read_module_title_id
 .global write_identity_file
 .global find_exact_profile
 .global apply_title_profile
@@ -64,7 +61,7 @@ _start:
     bne     loader_success
 
     # Fail closed by default: this build is diagnostic/preflight only.
-    # The worker calls XAM APIs but apiThreadStartup remains unresolved.
+    # The worker uses kernel-native APIs; NULL apiThreadStartup remains unvalidated.
     li      r12, XP_STAGE_B1_RUNTIME_ENABLED
     cmpwi   r12, 1
     bne     loader_success
@@ -118,24 +115,24 @@ auto_mode_thread:
     mflr    r0
     stwu    r1, -0x300(r1)
     stw     r0,  0x08(r1)
-    stw     r14, 0x0c(r1)
-    stw     r15, 0x10(r1)
-    stw     r16, 0x14(r1)
-    stw     r17, 0x18(r1)
-    stw     r18, 0x1c(r1)
-    stw     r19, 0x20(r1)
-    stw     r20, 0x24(r1)
-    stw     r21, 0x28(r1)
-    stw     r22, 0x2c(r1)
-    stw     r23, 0x30(r1)
-    stw     r24, 0x34(r1)
-    stw     r25, 0x38(r1)
-    stw     r26, 0x3c(r1)
-    stw     r27, 0x40(r1)
-    stw     r28, 0x44(r1)
-    stw     r29, 0x48(r1)
-    stw     r30, 0x4c(r1)
-    stw     r31, 0x50(r1)
+    stw     r14, 0x200(r1)
+    stw     r15, 0x204(r1)
+    stw     r16, 0x208(r1)
+    stw     r17, 0x20c(r1)
+    stw     r18, 0x210(r1)
+    stw     r19, 0x214(r1)
+    stw     r20, 0x218(r1)
+    stw     r21, 0x21c(r1)
+    stw     r22, 0x220(r1)
+    stw     r23, 0x224(r1)
+    stw     r24, 0x228(r1)
+    stw     r25, 0x22c(r1)
+    stw     r26, 0x230(r1)
+    stw     r27, 0x234(r1)
+    stw     r28, 0x238(r1)
+    stw     r29, 0x23c(r1)
+    stw     r30, 0x240(r1)
+    stw     r31, 0x244(r1)
 
     li      r3, ORD_KE_DELAY_EXECUTION_THREAD
     bl      get_kernel_export
@@ -161,72 +158,30 @@ auto_mode_thread:
     beq     auto_mode_exit
     mr      r27, r3
 
-    li      r3, ORD_XEX_GET_MODULE_HANDLE
+    # Resolve kernel-native helpers; no XAM module or procedure resolution.
+    li      r3, ORD_RTL_INIT_ANSI_STRING
     bl      get_kernel_export
     cmpwi   r3, 0
     beq     auto_mode_exit
-    mr      r18, r3
+    stw     r3, 0x60(r1)
 
-    li      r3, ORD_XEX_GET_PROCEDURE_ADDRESS
+    li      r3, ORD_NT_CREATE_FILE
     bl      get_kernel_export
     cmpwi   r3, 0
     beq     auto_mode_exit
-    mr      r17, r3
+    stw     r3, 0x64(r1)
 
-    lis     r3, xam_module_name@ha
-    addi    r3, r3, xam_module_name@l
-    addi    r4, r1, 0x60
-    mtctr   r18
-    bctrl
+    li      r3, ORD_NT_WRITE_FILE
+    bl      get_kernel_export
     cmpwi   r3, 0
-    bne     auto_mode_exit
-    lwz     r16, 0x60(r1)
-    cmpwi   r16, 0
     beq     auto_mode_exit
+    stw     r3, 0x68(r1)
 
-    mr      r3, r16
-    li      r4, ORD_XAM_GET_CURRENT_TITLE_ID
-    addi    r5, r1, 0x64
-    mtctr   r17
-    bctrl
+    li      r3, ORD_NT_CLOSE
+    bl      get_kernel_export
     cmpwi   r3, 0
-    bne     auto_mode_exit
-    lwz     r30, 0x64(r1)
-    cmpwi   r30, 0
     beq     auto_mode_exit
-
-    mr      r3, r16
-    li      r4, ORD_XAM_CREATE_FILE_A
-    addi    r5, r1, 0x64
-    mtctr   r17
-    bctrl
-    cmpwi   r3, 0
-    bne     auto_mode_exit
-    lwz     r26, 0x64(r1)
-    cmpwi   r26, 0
-    beq     auto_mode_exit
-
-    mr      r3, r16
-    li      r4, ORD_XAM_WRITE_FILE
-    addi    r5, r1, 0x64
-    mtctr   r17
-    bctrl
-    cmpwi   r3, 0
-    bne     auto_mode_exit
-    lwz     r25, 0x64(r1)
-    cmpwi   r25, 0
-    beq     auto_mode_exit
-
-    mr      r3, r16
-    li      r4, ORD_XAM_CLOSE_HANDLE
-    addi    r5, r1, 0x64
-    mtctr   r17
-    bctrl
-    cmpwi   r3, 0
-    bne     auto_mode_exit
-    lwz     r24, 0x64(r1)
-    cmpwi   r24, 0
-    beq     auto_mode_exit
+    stw     r3, 0x6c(r1)
 
     li      r23, 0             # active profile
     li      r22, 0             # pending Title ID
@@ -283,14 +238,16 @@ auto_mode_rollback_pending_clear:
     li      r12, 0
     stw     r12, 0x118(r1)
 auto_mode_observe_title:
-    mtctr   r30
-    bctrl
-    mr      r15, r3
-    cmpwi   r15, 0
-    beq     auto_mode_no_collectable_title
-
+    # Parse TitleId from the active module's XEX ExecutionInfo, not XAM.
     lwz     r14, 0(r29)
     cmpwi   r14, 0
+    beq     auto_mode_no_collectable_title
+    mr      r3, r14
+    mr      r4, r28
+    mr      r5, r27
+    bl      read_module_title_id
+    mr      r15, r3
+    cmpwi   r15, 0
     beq     auto_mode_no_collectable_title
 
     # Reserved FF Title IDs are dashboards/system homebrew. Do not inspect them.
@@ -353,12 +310,14 @@ auto_mode_capture:
     cmpwi   r3, 1
     bne     auto_mode_identity_invalid
 
-    # Close the title-transition race: both public title and module must match.
+    # Close the transition race: both module pointer and parsed TitleId match.
     lwz     r12, 0(r29)
     cmpw    r12, r21
     bne     auto_mode_identity_invalid
-    mtctr   r30
-    bctrl
+    mr      r3, r12
+    mr      r4, r28
+    mr      r5, r27
+    bl      read_module_title_id
     cmpw    r3, r22
     bne     auto_mode_identity_invalid
 
@@ -415,9 +374,10 @@ auto_mode_copy_attempt_loop:
     bdnz    auto_mode_copy_attempt_loop
 
     addi    r3, r1, 0x80
-    mr      r4, r26
-    mr      r5, r25
-    mr      r6, r24
+    lwz     r4, 0x60(r1)       # RtlInitAnsiString
+    lwz     r5, 0x64(r1)       # NtCreateFile
+    lwz     r6, 0x68(r1)       # NtWriteFile
+    lwz     r7, 0x6c(r1)       # NtClose
     bl      write_identity_file
 
 auto_mode_profile_lookup:
@@ -531,30 +491,129 @@ auto_mode_sleep:
 
 auto_mode_exit:
     li      r3, 0
-    lwz     r31, 0x50(r1)
-    lwz     r30, 0x4c(r1)
-    lwz     r29, 0x48(r1)
-    lwz     r28, 0x44(r1)
-    lwz     r27, 0x40(r1)
-    lwz     r26, 0x3c(r1)
-    lwz     r25, 0x38(r1)
-    lwz     r24, 0x34(r1)
-    lwz     r23, 0x30(r1)
-    lwz     r22, 0x2c(r1)
-    lwz     r21, 0x28(r1)
-    lwz     r20, 0x24(r1)
-    lwz     r19, 0x20(r1)
-    lwz     r18, 0x1c(r1)
-    lwz     r17, 0x18(r1)
-    lwz     r16, 0x14(r1)
-    lwz     r15, 0x10(r1)
-    lwz     r14, 0x0c(r1)
+    lwz     r31, 0x244(r1)
+    lwz     r30, 0x240(r1)
+    lwz     r29, 0x23c(r1)
+    lwz     r28, 0x238(r1)
+    lwz     r27, 0x234(r1)
+    lwz     r26, 0x230(r1)
+    lwz     r25, 0x22c(r1)
+    lwz     r24, 0x228(r1)
+    lwz     r23, 0x224(r1)
+    lwz     r22, 0x220(r1)
+    lwz     r21, 0x21c(r1)
+    lwz     r20, 0x218(r1)
+    lwz     r19, 0x214(r1)
+    lwz     r18, 0x210(r1)
+    lwz     r17, 0x20c(r1)
+    lwz     r16, 0x208(r1)
+    lwz     r15, 0x204(r1)
+    lwz     r14, 0x200(r1)
     lwz     r0,  0x08(r1)
     addi    r1, r1, 0x300
     mtlr    r0
     blr
 
-# IN: r3 = XAM title id
+# IN: r3 = loader/module entry, r4 = RtlImageXexHeaderField,
+#     r5 = MmIsAddressValid
+# OUT: r3 = validated ExecutionInfo.TitleId, or 0 when unavailable/invalid.
+read_module_title_id:
+    mflr    r0
+    stwu    r1, -0x80(r1)
+    stw     r0,  0x08(r1)
+    stw     r28, 0x0c(r1)
+    stw     r29, 0x10(r1)
+    stw     r30, 0x14(r1)
+    stw     r31, 0x18(r1)
+
+    mr      r29, r3
+    mr      r30, r4
+    mr      r31, r5
+
+    mr      r3, r29
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+    addi    r3, r29, 0x5b
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+
+    lwz     r28, LDR_XEX_HEADER_BASE_OFFSET(r29)
+    cmpwi   r28, 0
+    beq     read_title_invalid
+    mr      r3, r28
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+    addi    r3, r28, 0x17
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+
+    lwz     r8, 0(r28)
+    lis     r9, 0x5845
+    ori     r9, r9, 0x5832
+    cmpw    r8, r9
+    bne     read_title_invalid
+
+    lwz     r10, 0x08(r28)
+    cmplwi  r10, 0x0190
+    blt     read_title_invalid
+    lis     r12, 0x0010
+    cmplw   r10, r12
+    bgt     read_title_invalid
+    add     r3, r28, r10
+    addi    r3, r3, -1
+    cmplw   r3, r28
+    blt     read_title_invalid
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+
+    mr      r3, r28
+    lis     r4, 0x0004
+    ori     r4, r4, 0x0006
+    mtctr   r30
+    bctrl
+    mr      r28, r3
+    cmpwi   r28, 0
+    beq     read_title_invalid
+    mr      r3, r28
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+    addi    r3, r28, 0x17
+    mtctr   r31
+    bctrl
+    cmpwi   r3, 0
+    beq     read_title_invalid
+
+    lwz     r3, XEX_EXECUTION_INFO_TITLE_ID_OFFSET(r28)
+    cmpwi   r3, 0
+    beq     read_title_invalid
+    b       read_title_return
+
+read_title_invalid:
+    li      r3, 0
+
+read_title_return:
+    lwz     r31, 0x18(r1)
+    lwz     r30, 0x14(r1)
+    lwz     r29, 0x10(r1)
+    lwz     r28, 0x0c(r1)
+    lwz     r0,  0x08(r1)
+    addi    r1, r1, 0x80
+    mtlr    r0
+    blr
+
+# IN: r3 = TitleId parsed from the current module's XEX ExecutionInfo
 #     r4 = output identity
 #     r5 = stable LDR_DATA_TABLE_ENTRY pointer
 #     r6 = RtlImageXexHeaderField
@@ -564,15 +623,15 @@ capture_execution_identity:
     mflr    r0
     stwu    r1, -0x100(r1)
     stw     r0,  0x08(r1)
-    stw     r23, 0x0c(r1)
-    stw     r24, 0x10(r1)
-    stw     r25, 0x14(r1)
-    stw     r26, 0x18(r1)
-    stw     r27, 0x1c(r1)
-    stw     r28, 0x20(r1)
-    stw     r29, 0x24(r1)
-    stw     r30, 0x28(r1)
-    stw     r31, 0x2c(r1)
+    stw     r23, 0x60(r1)
+    stw     r24, 0x64(r1)
+    stw     r25, 0x68(r1)
+    stw     r26, 0x6c(r1)
+    stw     r27, 0x70(r1)
+    stw     r28, 0x74(r1)
+    stw     r29, 0x78(r1)
+    stw     r30, 0x7c(r1)
+    stw     r31, 0x80(r1)
 
     mr      r27, r3
     mr      r28, r4
@@ -713,44 +772,46 @@ capture_failure:
     stw     r3, 0x24(r28)
 
 capture_return:
-    lwz     r31, 0x2c(r1)
-    lwz     r30, 0x28(r1)
-    lwz     r29, 0x24(r1)
-    lwz     r28, 0x20(r1)
-    lwz     r27, 0x1c(r1)
-    lwz     r26, 0x18(r1)
-    lwz     r25, 0x14(r1)
-    lwz     r24, 0x10(r1)
-    lwz     r23, 0x0c(r1)
+    lwz     r31, 0x80(r1)
+    lwz     r30, 0x7c(r1)
+    lwz     r29, 0x78(r1)
+    lwz     r28, 0x74(r1)
+    lwz     r27, 0x70(r1)
+    lwz     r26, 0x6c(r1)
+    lwz     r25, 0x68(r1)
+    lwz     r24, 0x64(r1)
+    lwz     r23, 0x60(r1)
     lwz     r0,  0x08(r1)
     addi    r1, r1, 0x100
     mtlr    r0
     blr
 
-# IN: r3 = exact identity, r4 = CreateFileA, r5 = WriteFile, r6 = CloseHandle
+# IN: r3 = exact identity, r4 = RtlInitAnsiString, r5 = NtCreateFile,
+#     r6 = NtWriteFile, r7 = NtClose
 # OUT: r3 = 1 only when the entire report was synchronously written
 write_identity_file:
     mflr    r0
     stwu    r1, -0x300(r1)
     stw     r0,  0x08(r1)
-    stw     r23, 0x0c(r1)
-    stw     r24, 0x10(r1)
-    stw     r25, 0x14(r1)
-    stw     r26, 0x18(r1)
-    stw     r27, 0x1c(r1)
-    stw     r28, 0x20(r1)
-    stw     r29, 0x24(r1)
-    stw     r30, 0x28(r1)
-    stw     r31, 0x2c(r1)
+    stw     r23, 0xc0(r1)
+    stw     r24, 0xc4(r1)
+    stw     r25, 0xc8(r1)
+    stw     r26, 0xcc(r1)
+    stw     r27, 0xd0(r1)
+    stw     r28, 0xd4(r1)
+    stw     r29, 0xd8(r1)
+    stw     r30, 0xdc(r1)
+    stw     r31, 0xe0(r1)
 
     mr      r27, r3
     mr      r28, r4
     mr      r29, r5
     mr      r30, r6
+    stw     r7, 0x8c(r1)       # NtClose
 
     lis     r3, report_prefix@ha
     addi    r3, r3, report_prefix@l
-    addi    r4, r1, 0x80
+    addi    r4, r1, 0x100
     bl      copy_ascii_to_buffer
     mr      r31, r3
 
@@ -815,7 +876,7 @@ write_digest_loop:
     li      r12, 0
     stb     r12, 0(r31)
 
-    addi    r12, r1, 0x80
+    addi    r12, r1, 0x100
     subf    r23, r12, r31      # exact byte count, excluding NUL
 
     li      r24, 0
@@ -824,50 +885,82 @@ write_open_attempt:
     bne     write_open_fallback
     lis     r3, identity_path_usb0@ha
     addi    r3, r3, identity_path_usb0@l
-    b       write_open_call
+    b       write_open_path_ready
 write_open_fallback:
     lis     r3, identity_path_usb@ha
     addi    r3, r3, identity_path_usb@l
-write_open_call:
-    lis     r4, 0x4000         # GENERIC_WRITE
-    li      r5, 3              # FILE_SHARE_READ | FILE_SHARE_WRITE
-    li      r6, 0
-    li      r7, 2              # CREATE_ALWAYS
-    li      r8, 0x80           # FILE_ATTRIBUTE_NORMAL
-    li      r9, 0
+
+write_open_path_ready:
+    # Build the Xbox ANSI_STRING and OBJECT_ATTRIBUTES structures.
+    mr      r4, r3
+    addi    r3, r1, 0x80
     mtctr   r28
     bctrl
-    mr      r26, r3
-    cmpwi   r26, -1
-    bne     write_handle_open
+
+    li      r12, 0
+    stw     r12, 0x70(r1)       # RootDirectory = NULL
+    addi    r12, r1, 0x80
+    stw     r12, 0x74(r1)       # ObjectName = ANSI_STRING*
+    li      r12, 0x40
+    stw     r12, 0x78(r1)       # OBJ_CASE_INSENSITIVE
+
+    li      r12, 0
+    stw     r12, 0x68(r1)       # IO_STATUS_BLOCK.Status
+    stw     r12, 0x6c(r1)       # IO_STATUS_BLOCK.Information
+    stw     r12, 0x88(r1)       # FileHandle output
+
+    # NtCreateFile's ninth argument is CreateOptions. The first eight fit in
+    # r3-r10; Xenon uses an 8-byte stack slot per argument, with a DWORD
+    # right-justified in the 9th slot at caller SP+0x60.
+    addi    r3, r1, 0x88        # PHANDLE FileHandle
+    lis     r4, 0x4010          # GENERIC_WRITE | SYNCHRONIZE
+    addi    r5, r1, 0x70        # OBJECT_ATTRIBUTES*
+    addi    r6, r1, 0x68        # IO_STATUS_BLOCK*
+    li      r7, 0               # AllocationSize = NULL
+    li      r8, 0x80            # FILE_ATTRIBUTE_NORMAL
+    li      r9, 3               # FILE_SHARE_READ | FILE_SHARE_WRITE
+    li      r10, 5              # FILE_OVERWRITE_IF
+    li      r12, 0x60           # FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT
+    stw     r12, 0x64(r1)       # low DWORD in stack argument 9's 8-byte slot
+    mtctr   r29
+    bctrl
+    cmpwi   r3, 0               # NTSTATUS_SUCCESS only
+    beq     write_handle_open
     cmpwi   r24, 0
     bne     write_failure_no_handle
     li      r24, 1
     b       write_open_attempt
 
 write_handle_open:
+    lwz     r26, 0x88(r1)
     cmpwi   r26, 0
     beq     write_failure_no_handle
+
     li      r12, 0
-    stw     r12, 0x60(r1)
-    mr      r3, r26
-    addi    r4, r1, 0x80
-    mr      r5, r23
-    addi    r6, r1, 0x60
-    li      r7, 0
-    mtctr   r29
+    stw     r12, 0x68(r1)
+    stw     r12, 0x6c(r1)
+    mr      r3, r26             # FileHandle
+    li      r4, 0               # Event
+    li      r5, 0               # ApcRoutine
+    li      r6, 0               # ApcContext
+    addi    r7, r1, 0x68        # IO_STATUS_BLOCK*
+    addi    r8, r1, 0x100       # report buffer
+    mr      r9, r23             # byte count
+    li      r10, 0              # ByteOffset = NULL (synchronous current position)
+    mtctr   r30
     bctrl
     li      r24, 0
     cmpwi   r3, 0
-    beq     write_close
-    lwz     r12, 0x60(r1)
+    bne     write_close
+    lwz     r12, 0x6c(r1)       # IO_STATUS_BLOCK.Information
     cmpw    r12, r23
     bne     write_close
     li      r24, 1
 
 write_close:
     mr      r3, r26
-    mtctr   r30
+    lwz     r12, 0x8c(r1)
+    mtctr   r12
     bctrl
     mr      r3, r24
     b       write_return
@@ -876,15 +969,15 @@ write_failure_no_handle:
     li      r3, 0
 
 write_return:
-    lwz     r31, 0x2c(r1)
-    lwz     r30, 0x28(r1)
-    lwz     r29, 0x24(r1)
-    lwz     r28, 0x20(r1)
-    lwz     r27, 0x1c(r1)
-    lwz     r26, 0x18(r1)
-    lwz     r25, 0x14(r1)
-    lwz     r24, 0x10(r1)
-    lwz     r23, 0x0c(r1)
+    lwz     r31, 0xe0(r1)
+    lwz     r30, 0xdc(r1)
+    lwz     r29, 0xd8(r1)
+    lwz     r28, 0xd4(r1)
+    lwz     r27, 0xd0(r1)
+    lwz     r26, 0xcc(r1)
+    lwz     r25, 0xc8(r1)
+    lwz     r24, 0xc4(r1)
+    lwz     r23, 0xc0(r1)
     lwz     r0,  0x08(r1)
     addi    r1, r1, 0x300
     mtlr    r0
@@ -1188,12 +1281,10 @@ export_missing:
     blr
 
 .align 2
-xam_module_name:
-    .asciz  "xam.xex"
 identity_path_usb0:
-    .asciz  "Usb0:\\XenonPerformanceIdentity.txt"
+    .asciz  "\\??\\Usb0:\\XenonPerformanceIdentity.txt"
 identity_path_usb:
-    .asciz  "Usb:\\XenonPerformanceIdentity.txt"
+    .asciz  "\\??\\Usb:\\XenonPerformanceIdentity.txt"
 report_prefix:
     .asciz  "XENON_PERFORMANCE_IDENTITY_V1\r\nTITLE_ID="
 report_media:
