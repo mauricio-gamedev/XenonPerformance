@@ -35,7 +35,7 @@
 .set XP_PROFILE_REVERT_OFFSET,            0x0028
 .set XP_STABLE_SAMPLES,                   2
 # Deployment gate: keep runtime inert until XapiThreadStartup is resolved
-# using a target-compatible import/startup path and validated on hardware.
+# after target-compatible thread startup and API behavior are validated.
 .set XP_STAGE_B1_RUNTIME_ENABLED,          0
 
 .section .text
@@ -79,7 +79,7 @@ _start:
     addi    r3, r1, 0x40
     lis     r4, 1              # 0x00010000 = 64 KiB worker stack
     addi    r5, r1, 0x44
-    li      r6, 0              # UNRESOLVED: null API startup; worker later calls XAM APIs
+    li      r6, 0              # NULL API startup contract remains unverified on target
     lis     r7, auto_mode_thread@ha
     addi    r7, r7, auto_mode_thread@l
     li      r8, 0

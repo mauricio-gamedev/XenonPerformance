@@ -110,3 +110,10 @@ does not link `xapilib.lib`; runtime stays disabled. Next options are to use an
 authorized, target-compatible XDK library-link route and inspect its output, or
 redesign around individually verified kernel-native APIs. Neither option is
 complete until the final image is validated on the intended console.
+
+
+### High — XAM calls removed from the current kernel-only candidate; startup still unverified
+
+The current recovery candidate no longer resolves xam.xex or calls XamGetCurrentTitleId, XamCreateFileA, XamWriteFile, or XamCloseHandle. It reads the TitleId from XEX ExecutionInfo at offset 0x0c and uses kernel-native RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose. Public source references supporting the structure and ordinal names include https://github.com/emoose/xbox-reversing/blob/master/xbox360.py, https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord, and https://github.com/zeroKilo/TheSaboteurX360PatcherWV/blob/master/Patcher_Saboteur/Patcher/kernel.h.
+
+This reduces the worker's XAPI dependency but does not prove ExCreateThread with apiThreadStartup=NULL is valid for this freestanding plugin. The ninth NtCreateFile argument's stack slot, export/signature compatibility with the target kernel, and USB object-manager path behavior need hardware validation. Callee-saved-register storage was moved outside the Xenon outgoing parameter home area in the worker, XEX identity parser, and writer before the additional kernel calls. Runtime remains disabled, profile registry remains empty, and no game writes or FPS improvement are claimed.

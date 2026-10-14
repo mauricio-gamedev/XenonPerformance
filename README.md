@@ -6,10 +6,12 @@ research.
 ## Current milestone: Stage B1 preflight
 
 **The runtime is deliberately disabled. Do not install this XEX or add it to
-DashLaunch `launch.ini`.** The resident worker's `XapiThreadStartup` linkage
-has not yet been resolved through a verified, target-compatible import path.
-The worker would call XAM exports from that thread, so assembling and packaging
-a valid XEX does not establish runtime safety.
+DashLaunch `launch.ini`.** The worker has been refactored to read TitleId from
+the active XEX ExecutionInfo and use kernel-native file APIs instead of XAM
+exports. However, ExCreateThread still receives apiThreadStartup=NULL, and
+that start contract, target kernel export map, ninth NtCreateFile stack
+argument, and USB object-manager paths have not been validated on hardware.
+A successful assembly/XEX build does not establish runtime safety.
 
 The current build sets `XP_STAGE_B1_RUNTIME_ENABLED=0`. On DLL attach it
 returns successfully without creating a worker, polling a title, or writing an
@@ -36,9 +38,9 @@ signature or recalculate the hash.
 
 The shipped profile registry is intentionally empty. The codebase does not
 currently patch game memory, NAND, SMC, clocks, or voltage and claims no FPS
-gain. Runtime collection will remain disabled until the XAPI startup path is
-resolved from a trusted SDK/import source (or the worker is redesigned around
-verified kernel-native APIs) and then validated on the intended console.
+gain. Runtime collection will remain disabled until null-startup thread behavior,
+kernel API calling conventions, USB file paths, and exact export mappings are
+validated on the intended console.
 
 See [`docs/STAGE_B_AUTO_MODE.md`](docs/STAGE_B_AUTO_MODE.md) for the safety
 contract, planned identity format, and hardware-validation boundary. See

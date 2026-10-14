@@ -2,17 +2,9 @@
 
 ## Current state: preflight only
 
-**Runtime collection is disabled. Do not install this XEX or add it to
-DashLaunch `launch.ini`.** The branch sets `XP_STAGE_B1_RUNTIME_ENABLED=0`
-because the freestanding resident worker does not yet have a verified
-`XapiThreadStartup` import/linkage path. The planned worker calls XAM APIs.
-Until that startup context is resolved from a trusted SDK/import source or the
-design is changed to verified kernel-native calls, this is a CI/preflight
-artifact only. It does not create a thread, poll the current title, or write an
-identity report.
+**Runtime collection is disabled. Do not install this XEX or add it to DashLaunch launch.ini.** The branch keeps XP_STAGE_B1_RUNTIME_ENABLED=0. The worker no longer resolves xam.xex or calls XAM exported functions: it reads TitleId from the active XEX ExecutionInfo and uses kernel-native RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose for the identity report. However, ExCreateThread still receives apiThreadStartup=NULL, which has not been verified for this freestanding plugin and target kernel. The USB object-manager path, native file API calling convention, kernel export map, and stack argument for NtCreateFile are also unverified on the console. This is still a CI/preflight artifact; it does not create a thread, poll titles, write a report, or modify game memory.
 
-The sections below document the intended Stage B1 runtime and the safeguards
-that must be retained when the startup blocker is resolved.
+The sections below document the intended Stage B1 runtime and safeguards that must be retained after hardware validation.
 
 ## Loader-collision correction
 
@@ -54,10 +46,7 @@ described as proof of authenticity.
 
 ## Intended collector output (currently unavailable)
 
-The planned collector would format the exact identity as plain ASCII and write
-a report to `Usb0:\XenonPerformanceIdentity.txt`, with
-`Usb:\XenonPerformanceIdentity.txt` as fallback. The current preflight build
-does not execute this path and will not create either file.
+The kernel-native candidate would format the exact identity as plain ASCII and write a report to the object-manager path \\??\\Usb0:\\XenonPerformanceIdentity.txt, with \\??\\Usb:\\XenonPerformanceIdentity.txt as fallback. The current preflight build does not execute this path and will not create either file. NtCreateFile's ninth argument (CreateOptions) is placed in the Xenon 8-byte overflow parameter slot; the assembly build passing does not prove the target ABI or USB path works.
 
 ## Profile and rollback contract
 
@@ -124,3 +113,16 @@ target-compatible XDK `xapilib.lib` route and inspect the final import/code
 layout, or (2) redesign the worker to avoid XAPI-dependent startup and validate
 every replacement kernel-native API separately. Both paths still require
 console validation before deployment.
+
+
+## Kernel-native candidate path (still preflight-only)
+
+Title ID sampling now reads XEX_HEADER_EXECUTION_INFO (key 0x00040006) through RtlImageXexHeaderField, then reads ExecutionInfo.TitleId at offset 0x0c. The reader checks the loader entry, XEX2 magic, bounded header size, ExecutionInfo pointer/range, and nonzero TitleId. The worker repeats the module-pointer and TitleId check after identity capture to close the transition race.
+
+Identity output uses the Xbox kernel export candidates RtlInitAnsiString, NtCreateFile, NtWriteFile, and NtClose. It treats nonzero NTSTATUS values and short writes as failures. This removes direct XAM calls from the worker, but it does not make the worker safe to run. The null apiThreadStartup behavior, kernel ordinals/signatures for the target dashboard, object-manager paths for USB storage, and stack-passed ninth argument to NtCreateFile still require console validation. Keep XP_STAGE_B1_RUNTIME_ENABLED at zero.
+
+References:
+- XEX execution ID layout: https://github.com/emoose/xbox-reversing/blob/master/xbox360.py
+- Xbox 360 kernel ordinal table: https://github.com/exjam/xbox360-emu/blob/master/docs/kernel/ordinals/xboxkrnl.ord
+- Xbox 360 ANSI_STRING, OBJECT_ATTRIBUTES and NtCreateFile declarations: https://github.com/zeroKilo/TheSaboteurX360PatcherWV/blob/master/Patcher_Saboteur/Patcher/kernel.h
+- RtlInitAnsiString and ExCreateThread declarations: https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h
