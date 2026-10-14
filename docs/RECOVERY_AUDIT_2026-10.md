@@ -84,3 +84,8 @@ The original `get_kernel_export` read `e_lfanew` and export-directory fields wit
 ### Deployment behavior
 
 Because `XapiThreadStartup` remains unresolved, `XP_STAGE_B1_RUNTIME_ENABLED` is now `0`. The DLL entry returns without creating the worker. The generated first-run note and JSON manifest label the artifact preflight-only, set deployment blocked, and state that no identity collection occurs. This removes the prior mismatch where CI artifacts included DashLaunch installation instructions despite the unresolved thread-startup prerequisite.
+
+
+### Medium — worker scheduling inherited the loader thread's processor
+
+The resident worker previously passed only the system-thread flag to `ExCreateThread`, leaving processor placement dependent on the loader thread/context. Microsoft's Xbox 360 threading guidance says software threads should be assigned explicitly. The recovery branch now requests `EX_CREATE_FLAG_CORE4` (`0x10000000`) with the system-thread flag at creation; the bit value is supported by a public SDK-compatible header reference: https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h. The 64 KiB stack size is retained. This is a static configuration improvement, not proof of actual placement on every dashboard/kernel, and runtime remains disabled pending thread-startup resolution.

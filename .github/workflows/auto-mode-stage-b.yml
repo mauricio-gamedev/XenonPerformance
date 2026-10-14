@@ -62,13 +62,16 @@ jobs:
           grep -F 'policy.dry_run || !policy.armed' src/xp_auto_mode.c
           grep -F 'XP_AUTO_UNKNOWN_TITLE' src/xp_auto_mode.c
           grep -F 'lis     r4, 1' src/xp_auto_mode_stage_b.s
+          grep -F '.set EX_CREATE_FLAG_CORE4, 0x10000000' src/xp_auto_mode_stage_b.s
+          grep -F 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
+          grep -F 'ori     r9, r9, EX_CREATE_FLAG_SYSTEM' src/xp_auto_mode_stage_b.s
           grep -F 'cmpw    r23, r18' src/xp_auto_mode_stage_b.s
           grep -F 'XP_PROFILE_REVERT_OFFSET(r3)' src/xp_auto_mode_stage_b.s
           grep -F 'auto_mode_rollback_wait' src/xp_auto_mode_stage_b.s
           grep -F '0x118(r1)' src/xp_auto_mode_stage_b.s
           grep -F 'XP_AUTO_ROLLBACK_FAILED' src/xp_auto_mode.c
           grep -F 'profile_revert_failed' src/xp_auto_mode_stage_b.s
-          echo 'XPAUTOPOLICY4 PASS: exact match, verified rollback retry, apply-failure latch and worker stack guard present'
+          echo 'XPAUTOPOLICY5 PASS: exact match, rollback retry, apply-failure latch, worker stack and affinity flags present'
 
       - name: Upload core validation
         uses: actions/upload-artifact@v4
@@ -111,6 +114,9 @@ jobs:
           echo 'XPAUTOB2 stage=source-gates begin'
           grep -Fq 'ORD_XAM_GET_CURRENT_TITLE_ID' src/xp_auto_mode_stage_b.s
           grep -Fq 'ORD_EX_CREATE_THREAD' src/xp_auto_mode_stage_b.s
+          grep -Fq '.set EX_CREATE_FLAG_CORE4, 0x10000000' src/xp_auto_mode_stage_b.s
+          grep -Fq 'lis     r9, 0x1000' src/xp_auto_mode_stage_b.s
+          grep -Fq 'ori     r9, r9, EX_CREATE_FLAG_SYSTEM' src/xp_auto_mode_stage_b.s
           grep -Fq 'XP_STAGE_B1_RUNTIME_ENABLED,          0' src/xp_auto_mode_stage_b.s
           grep -Fq 'IMAGE_EXPORT_DIRECTORY' src/xp_auto_mode_stage_b.s
           grep -Fq 'cmplw   r11, r4' src/xp_auto_mode_stage_b.s

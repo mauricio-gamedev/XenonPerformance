@@ -8,9 +8,12 @@
 #   - validates every loader/header range with MmIsAddressValid
 #   - uses RtlImageXexHeaderField for execution metadata
 #   - captures one text report per exact game identity transition
+#   - background worker requests a specific hardware thread at creation
 #   - profile_registry_count remains zero, so no game-memory patch can run
 
 .set ORD_EX_CREATE_THREAD,                0x000d
+.set EX_CREATE_FLAG_SYSTEM,               0x00000002
+.set EX_CREATE_FLAG_CORE4,                 0x10000000
 .set ORD_KE_DELAY_EXECUTION_THREAD,       0x005a
 .set ORD_MM_IS_ADDRESS_VALID,             0x00bf
 .set ORD_NT_CLOSE,                        0x00cf
@@ -83,7 +86,8 @@ _start:
     lis     r7, auto_mode_thread@ha
     addi    r7, r7, auto_mode_thread@l
     li      r8, 0
-    li      r9, 2              # system thread, not suspended
+    lis     r9, 0x1000         # EX_CREATE_FLAG_CORE4 = 0x10000000
+    ori     r9, r9, EX_CREATE_FLAG_SYSTEM # system thread, not suspended
     mtctr   r31
     bctrl
     cmpwi   r3, 0

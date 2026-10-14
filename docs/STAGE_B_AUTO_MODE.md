@@ -22,6 +22,18 @@ preflight image retains the conventional system-plugin base `0x91D00000`, with
 the code section beginning at `0x91D10000`. A high base and a valid container
 are not sufficient proof of runtime safety.
 
+## Worker scheduling safeguard (planned, not active in this preflight build)
+
+The intended worker requests a 64 KiB stack and pins the system thread to hardware
+thread 4 at creation with `EX_CREATE_FLAG_CORE4` (`0x10000000`) plus the system
+thread flag. Microsoft's Xbox 360 threading guidance says child software threads
+should be assigned explicitly rather than assumed to share a useful processor
+placement; a public SDK-compatible header defines the core-4 creation flag
+([Microsoft guidance](https://learn.microsoft.com/en-us/windows/desktop/DxTechArts/coding-for-multiple-cores),
+[header reference](https://github.com/Byrom90/XeUnshackle/blob/main/stdafx.h)).
+This reduces scheduling ambiguity in the intended design, but does not validate
+the flag on every kernel build or make this preflight artifact executable.
+
 ## Intended identity contract (not active in this preflight build)
 
 Once a verified startup path is implemented, the intended worker would:
